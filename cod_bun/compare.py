@@ -4,13 +4,132 @@ import nltk
 from nltk.stem import SnowballStemmer
 from nltk.corpus import stopwords
 import pickle
+import tkinter as tk
+from tkinter import filedialog, ttk, messagebox
+import os
 
-file1_path = 'test.docx'
-file2_path = 'test2.docx'
-text1 = docx2txt.process(file1_path)
-text2 = docx2txt.process(file2_path)
 
+# file1_path = 'test.docx'
+# file2_path = 'test2.docx'
+# text1 = docx2txt.process(file1_path)
+# text2 = docx2txt.process(file2_path)
+
+class PlagiarismChecker(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        
+        self.title('Plagiarism Checker')
+        self.geometry('300x200')
+        
+        self.filename = tk.StringVar()
+        self.topic = tk.StringVar()
+        self.plagiarism_results = tk.StringVar()
+
+        self.create_widgets()
     
+    def create_widgets(self):
+        # Select File button
+        self.select_file_button = ttk.Button(self, text="Select File", command=self.select_file)
+        self.select_file_button.pack(pady=10)
+
+        # Dropdown for topic selection
+        self.topic_label = ttk.Label(self, text="Select Topic:")
+        self.topic_label.pack()
+
+        # Get topic values from subdirectories of dataBase folder
+        database_directory = "cod_bun/dataBase"
+        self.topic_dropdown = ttk.Combobox(self, textvariable=self.topic)
+        self.topic_dropdown['values'] = [d for d in os.listdir(database_directory) if os.path.isdir(os.path.join(database_directory, d))]
+        self.topic_dropdown.pack(pady=10)
+
+        # Compare button
+        self.compare_button = ttk.Button(self, text="Compare", command=self.compare)
+        self.compare_button.pack(pady=10)
+
+        # Save button
+        self.save_button = ttk.Button(self, text="Save", command=self.save)
+        self.save_button.pack(pady=10)
+
+        # Display plagiarism results
+        self.result_label = ttk.Label(self, textvariable=self.plagiarism_results)
+        self.result_label.pack(pady=10)
+    def select_file(self):
+        self.filename.set(filedialog.askopenfilename())
+    
+    def compare(self):
+     # Get selected topic directory
+        topic_directory = os.path.join("cod_bun/dataBase", self.topic.get())
+
+    # Make sure the directory exists
+        if not os.path.isdir(topic_directory):
+            self.plagiarism_results.set("No data for this topic.")
+            return
+
+    # Prepare the document to be checked
+        text = docx2txt.process(self.filename.get())
+        textWithoutDiacr =remove_diacritics(text)
+        textWithoutPrep = remove_prepositions(textWithoutDiacr)
+        roots = extract_roots(textWithoutPrep)
+        myText = list_to_string(roots)
+
+    # Build the tree for the document to be checked
+        check_tree = build_suffix_tree(myText, 2)
+
+    # Get a list of all .pkl files in the topic directory
+        suffix_tree_files = [f for f in os.listdir(topic_directory) if f.endswith('_st.pkl')]
+
+        if not suffix_tree_files:
+            self.plagiarism_results.set("No data for this topic.")
+            messagebox.showinfo("Info", "No files to compare with")
+            return
+
+    # Compare with each saved suffix tree
+        results = []
+        for filename in suffix_tree_files:
+            try:
+            # Load the saved tree
+                print(os.path.join(topic_directory, filename))
+                saved_tree = load_tree(os.path.join(topic_directory, filename))
+
+            # Calculate the similarity
+                similarity = calculate_similarity(check_tree, saved_tree)
+
+            # Add the result to the list
+                results.append((filename, similarity))
+                #print((filename, similarity))
+            except Exception as e:
+                results.append((filename, str(e)))
+
+    # Display the results
+        result_text = "\n".join(f"{filename}: {similarity*100:.2f}%" if isinstance(similarity, float) else f"{filename}: {similarity}" for filename, similarity in results)
+        self.plagiarism_results.set(result_text)
+        #print(result_text)
+        messagebox.showinfo("Info", result_text)
+
+
+    def save(self):
+        text = docx2txt.process(self.filename.get())
+        textWithoutDiacr = remove_diacritics(text)
+        textWithoutPrep = remove_prepositions(textWithoutDiacr)
+        roots = extract_roots(textWithoutPrep)
+        myText = list_to_string(roots)
+
+        tree = build_suffix_tree(myText, 2)
+
+        # Replace with your actual database directory
+        database_directory = "dataBase"
+        topic_directory = os.path.join(database_directory, self.topic.get())
+        if not os.path.exists(topic_directory):
+            os.makedirs(topic_directory)
+        
+        path = os.path.join(topic_directory, os.path.basename(self.filename.get()) + "_st.pkl")
+        save_tree(tree, path)
+
+        messagebox.showinfo("Info", f"Saved to {path}")
+
+
+
+
 
 def list_to_string(lst):
     string_repr = ' '.join(str(element) for element in lst)
@@ -69,6 +188,7 @@ def visualize(node, level=0):
 
 def calculate_similarity(tree1, tree2):
     common_nodes, total_nodes = compare_nodes(tree1, tree2)
+    print(common_nodes / total_nodes)
     return common_nodes / total_nodes
 
 
@@ -107,25 +227,31 @@ def load_tree(filename):
     with open(filename, 'rb') as f:
         return pickle.load(f)
     
+def save_tree(tree, filename):
+    with open(filename, 'wb') as f:
+        pickle.dump(tree, f)
+
+app = PlagiarismChecker()
+app.mainloop()
 # Example usage
 # textWithoutDiacr=remove_diacritics(text1)
 # textWithoutPrep=remove_prepositions(textWithoutDiacr)
 # roots = extract_roots(textWithoutPrep)
 # myText1=list_to_string(roots)
 
-textWithoutDiacr=remove_diacritics(text2)
-textWithoutPrep=remove_prepositions(textWithoutDiacr)
-roots = extract_roots(textWithoutPrep)
-myText2=list_to_string(roots)
+# textWithoutDiacr=remove_diacritics(text2)
+# textWithoutPrep=remove_prepositions(textWithoutDiacr)
+# roots = extract_roots(textWithoutPrep)
+# myText2=list_to_string(roots)
 
-#tree1 = build_suffix_tree(myText1)
-tree2 = build_suffix_tree(myText2,2)
+# #tree1 = build_suffix_tree(myText1)
+# tree2 = build_suffix_tree(myText2,2)
 
 
-tree1 = load_tree('tree1.pkl')
+# tree1 = load_tree('tree1.pkl')
 
-visualize(tree1)
-print("celalalt copac:")
-visualize(tree2)
-similarity = calculate_similarity(tree1, tree2)
-print(f"Similarity: {similarity * 100}%")
+# visualize(tree1)
+# print("celalalt copac:")
+# visualize(tree2)
+# similarity = calculate_similarity(tree1, tree2)
+# print(f"Similarity: {similarity * 100}%")
