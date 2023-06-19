@@ -19,11 +19,13 @@ class PlagiarismChecker(tk.Tk):
         super().__init__()
         
         self.title('Plagiarism Checker')
-        self.geometry('300x200')
+        self.geometry('300x300')
         
         self.filename = tk.StringVar()
         self.topic = tk.StringVar()
         self.plagiarism_results = tk.StringVar()
+        
+        self.min_depth = tk.StringVar(value='1')  # Set default value
 
         self.create_widgets()
     
@@ -31,17 +33,28 @@ class PlagiarismChecker(tk.Tk):
         # Select File button
         self.select_file_button = ttk.Button(self, text="Select File", command=self.select_file)
         self.select_file_button.pack(pady=10)
-
+        
+        # Label to display selected filename
+        self.filename_label = ttk.Label(self, textvariable=self.filename)
+        self.filename_label.pack(pady=[0,10])
+        
         # Dropdown for topic selection
         self.topic_label = ttk.Label(self, text="Select Topic:")
-        self.topic_label.pack()
+        self.topic_label.pack(pady=[10,0])
 
         # Get topic values from subdirectories of dataBase folder
-        database_directory = "cod_bun/dataBase"
+        database_directory = "dataBase"
         self.topic_dropdown = ttk.Combobox(self, textvariable=self.topic)
         self.topic_dropdown['values'] = [d for d in os.listdir(database_directory) if os.path.isdir(os.path.join(database_directory, d))]
         self.topic_dropdown.pack(pady=10)
 
+        # Dropdown for min_depth selection
+        self.min_depth_label = ttk.Label(self, text="Select Min Depth:")
+        self.min_depth_label.pack()
+        self.min_depth_dropdown = ttk.Combobox(self, textvariable=self.min_depth)
+        self.min_depth_dropdown['values'] = list(range(1, 9))  # 1 to 8 inclusive
+        self.min_depth_dropdown.pack(pady=10)
+        
         # Compare button
         self.compare_button = ttk.Button(self, text="Compare", command=self.compare)
         self.compare_button.pack(pady=10)
@@ -53,12 +66,15 @@ class PlagiarismChecker(tk.Tk):
         # Display plagiarism results
         self.result_label = ttk.Label(self, textvariable=self.plagiarism_results)
         self.result_label.pack(pady=10)
+        
+        
+        
     def select_file(self):
         self.filename.set(filedialog.askopenfilename())
     
     def compare(self):
      # Get selected topic directory
-        topic_directory = os.path.join("cod_bun/dataBase", self.topic.get())
+        topic_directory = os.path.join("dataBase", self.topic.get())
 
     # Make sure the directory exists
         if not os.path.isdir(topic_directory):
@@ -69,7 +85,8 @@ class PlagiarismChecker(tk.Tk):
         text = docx2txt.process(self.filename.get())
         textWithoutDiacr =remove_diacritics(text)
         textWithoutPrep = remove_prepositions(textWithoutDiacr)
-        roots = extract_roots(textWithoutPrep)
+        textWithCorrectPunct=replace_punctuation(textWithoutPrep)
+        roots = extract_roots(textWithCorrectPunct)
         myText = list_to_string(roots)
 
     # Build the tree for the document to be checked
@@ -83,6 +100,13 @@ class PlagiarismChecker(tk.Tk):
             messagebox.showinfo("Info", "No files to compare with")
             return
 
+    # Check if min_depth has a valid value
+        try:
+            min_depth = int(self.min_depth.get())
+        except ValueError:
+            self.plagiarism_results.set("Please select a valid min depth.")
+            messagebox.showinfo("Error", "Please select a valid min depth.")
+            return
     # Compare with each saved suffix tree
         results = []
         for filename in suffix_tree_files:
@@ -90,9 +114,9 @@ class PlagiarismChecker(tk.Tk):
             # Load the saved tree
                 print(os.path.join(topic_directory, filename))
                 saved_tree = load_tree(os.path.join(topic_directory, filename))
-
+                
             # Calculate the similarity
-                similarity = calculate_similarity(check_tree, saved_tree)
+                similarity = calculate_similarity(check_tree, saved_tree, min_depth)
 
             # Add the result to the list
                 results.append((filename, similarity))
@@ -128,8 +152,11 @@ class PlagiarismChecker(tk.Tk):
         messagebox.showinfo("Info", f"Saved to {path}")
 
 
-
-
+def replace_punctuation(text):
+    punctuation = ['!', '?', ';']
+    for p in punctuation:
+        text = text.replace(p, '.')
+    return text
 
 def list_to_string(lst):
     string_repr = ' '.join(str(element) for element in lst)
@@ -145,7 +172,8 @@ def remove_prepositions(text):
     stop_words.add(',')
     words = nltk.word_tokenize(text)  # Tokenizare în cuvinte
     
-    filtered_words = [word for word in words if word.lower() not in stop_words]  # Eliminarea prepozițiilor
+    # Eliminarea prepozițiilor
+    filtered_words = [word for word in words if word.lower() not in stop_words]  
     
     return ' '.join(filtered_words)  # Returnarea șirului de caractere fără prepoziții
 
@@ -186,13 +214,12 @@ def visualize(node, level=0):
     for child in node.children.values():
         visualize(child, level + 1)
 
-def calculate_similarity(tree1, tree2):
-    common_nodes, total_nodes = compare_nodes(tree1, tree2)
+def calculate_similarity(tree1, tree2, min_depth):
+    common_nodes, total_nodes = compare_nodes(tree1, tree2, min_depth=min_depth)
     print(common_nodes / total_nodes)
     return common_nodes / total_nodes
 
-
-def compare_nodes(node1, node2, depth=0):
+def compare_nodes(node1, node2, depth=0, min_depth=0):
     if node1 is None and node2 is None:
         return 0, 0
     
@@ -202,9 +229,9 @@ def compare_nodes(node1, node2, depth=0):
     if node2 is None:
         return 0, 1  # Considered as 'not matched', but doesn't contribute to the total.
     
-    # Only count the node if it is 4 levels deep or if it has children.
-    common_nodes = int(node1.label == node2.label and (depth >= 4 or bool(node1.children) or bool(node2.children)))
-    total_nodes = int(depth >= 4 or bool(node1.children))
+    # Only count the node if it is min_depth levels deep or if it has children.
+    common_nodes = int(node1.label == node2.label and (depth >= min_depth or bool(node1.children) or bool(node2.children)))
+    total_nodes = int(depth >= min_depth or bool(node1.children))
     
     node1_children = set(node1.children.keys())
     node2_children = set(node2.children.keys())
@@ -216,7 +243,8 @@ def compare_nodes(node1, node2, depth=0):
         child_common_nodes, child_total_nodes = compare_nodes(
             node1.children.get(label),
             node2.children.get(label),
-            depth + 1
+            depth + 1,
+            min_depth
         )
         common_nodes += child_common_nodes
         total_nodes += child_total_nodes
@@ -255,3 +283,38 @@ app.mainloop()
 # visualize(tree2)
 # similarity = calculate_similarity(tree1, tree2)
 # print(f"Similarity: {similarity * 100}%")
+
+
+
+
+
+# def compare_nodes(node1, node2, depth=0):
+#     if node1 is None and node2 is None:
+#         return 0, 0
+    
+#     if node1 is None:
+#         return 0, 1
+
+#     if node2 is None:
+#         return 0, 1  # Considered as 'not matched', but doesn't contribute to the total.
+    
+#     # Only count the node if it is 4 levels deep or if it has children.
+#     common_nodes = int(node1.label == node2.label and (depth >= 4 or bool(node1.children) or bool(node2.children)))
+#     total_nodes = int(depth >= 4 or bool(node1.children))
+    
+#     node1_children = set(node1.children.keys())
+#     node2_children = set(node2.children.keys())
+    
+#     common_labels = node1_children & node2_children
+#     unique_labels = node1_children  # We only care about labels in node1.
+    
+#     for label in unique_labels:
+#         child_common_nodes, child_total_nodes = compare_nodes(
+#             node1.children.get(label),
+#             node2.children.get(label),
+#             depth + 1
+#         )
+#         common_nodes += child_common_nodes
+#         total_nodes += child_total_nodes
+
+#     return common_nodes, total_nodes

@@ -48,14 +48,14 @@ class SuffixTreeCreator(tk.Tk):
         new_topic = simpledialog.askstring("Add Topic", "Enter new topic name")
 
         if new_topic is not None and new_topic.strip() != "":
-            database_directory = "cod_bun/dataBase"
+            database_directory = "dataBase"
             new_topic_directory = os.path.join(database_directory, new_topic)
             if not os.path.exists(new_topic_directory):
                 os.makedirs(new_topic_directory)
             self.populate_topics()
 
     def populate_topics(self):
-        database_directory = "cod_bun/dataBase"
+        database_directory = "dataBase"
         if not os.path.exists(database_directory):
             os.makedirs(database_directory)
         self.topic_dropdown['values'] = next(os.walk(database_directory))[1]  # get all directories in database_directory
@@ -64,13 +64,14 @@ class SuffixTreeCreator(tk.Tk):
         text = docx2txt.process(self.filename.get())
         textWithoutDiacr = self.remove_diacritics(text)
         textWithoutPrep = self.remove_prepositions(textWithoutDiacr)
-        roots = self.extract_roots(textWithoutPrep)
+        textWithCorrectPunct=self.replace_punctuation(textWithoutPrep)
+        roots = self.extract_roots(textWithCorrectPunct)
         myText = self.list_to_string(roots)
 
         tree = build_suffix_tree(myText, 2)
 
         # Replace with your actual database directory
-        database_directory = "cod_bun/dataBase"
+        database_directory = "dataBase"
         topic_directory = os.path.join(database_directory, self.topic.get())
         if not os.path.exists(topic_directory):
             os.makedirs(topic_directory)
@@ -79,6 +80,12 @@ class SuffixTreeCreator(tk.Tk):
         save_tree(tree, path)
 
         messagebox.showinfo("Info", f"Saved to {path}")
+
+    def replace_punctuation(text):
+        punctuation = ['!', '?', ';']
+        for p in punctuation:
+            text = text.replace(p, '.')
+        return text
 
 
     def list_to_string(self, lst):
